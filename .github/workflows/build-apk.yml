@@ -1,0 +1,48 @@
+name: Build APK (Cloud, no Android Studio)
+
+# 这个流水线让你不用装 Android Studio：
+# 把 PhoneCdBurner 推到 GitHub 仓库，GitHub 的云服务器会自动编译出 debug APK，
+# 在 Actions 页面点开这次运行 → Artifacts 里就能下载 PhoneCdBurner-debug-apk。
+#
+# 触发方式：
+#   1) 往 main/master 分支 push 代码会自动触发；
+#   2) 也能在仓库的 Actions 标签里手动 "Run workflow" 触发（workflow_dispatch）。
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept licenses & install SDK packages
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Build debug APK
+        # 项目没有提交 gradlew 包装脚本，这里直接指定 Gradle 8.4（与 gradle-wrapper.properties 一致）
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: 8.4
+          arguments: assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhoneCdBurner-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
