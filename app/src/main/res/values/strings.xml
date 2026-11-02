@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">小仙女要刻录</string>
+    <string name="app_author">作者：王紫靖（小仙女）</string>
+    <string name="hint_no_device">未检测到 USB 光驱。请通过 OTG 连接带独立供电的刻录机。</string>
+    <string name="btn_pick">选择文件 / 文件夹</string>
+    <string name="btn_burn_cdr">刻录（CD-R，一次性）</string>
+    <string name="btn_burn_cdrw">擦除并重刻（CD-RW）</string>
+    <string name="status_idle">就绪</string>
+    <string name="status_connecting">正在连接光驱…</string>
+    <string name="status_building_iso">正在生成 ISO 镜像…</string>
+    <string name="status_writing">正在写入光盘…</string>
+    <string name="status_closing">正在封盘…</string>
+    <string name="status_blanking">正在擦除光盘…</string>
+    <string name="status_done">完成</string>
+    <string name="status_error">出错</string>
+    <string name="title_file_list">待刻文件</string>
+</resources>

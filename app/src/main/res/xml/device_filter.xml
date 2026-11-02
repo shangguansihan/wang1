@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- USB Mass Storage 类 = 0x08。
+         subclass 0x02 = SFF-8020i / ATAPI（不少外置光驱用这个）
+         subclass 0x06 = SCSI 透明命令集（另一些光驱用这个） -->
+    <usb-device class="8" subclass="2" />
+    <usb-device class="8" subclass="6" />
+</resources>

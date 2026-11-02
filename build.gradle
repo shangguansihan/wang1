@@ -1,0 +1,5 @@
+// 项目级构建文件。真正的依赖与编译配置在 app/build.gradle。
+plugins {
+    id 'com.android.application' version '8.1.4' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+}
