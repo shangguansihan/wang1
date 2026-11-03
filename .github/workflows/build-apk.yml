@@ -38,6 +38,9 @@ jobs:
           chmod +x "$ANDROID_HOME/cmdline-tools/latest/bin/"*
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
+          # runner 自带 ANDROID_SDK_ROOT 指向另一份 SDK，与 ANDROID_HOME 冲突会导致 Gradle 报错；
+          # 这里把两者统一到我们安装好的这份 SDK
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
 
       - name: Build debug APK
         # 项目未提交 gradlew 包装脚本，这里直接指定 Gradle 8.4（与本地构建一致）
