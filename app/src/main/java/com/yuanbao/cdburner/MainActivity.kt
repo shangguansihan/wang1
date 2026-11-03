@@ -4,14 +4,13 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbManager
-import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.view.ViewGroup
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -19,6 +18,7 @@ import com.yuanbao.cdburner.burn.CdBurner
 import com.yuanbao.cdburner.databinding.ActivityMainBinding
 import com.yuanbao.cdburner.iso.Iso9660Builder
 import com.yuanbao.cdburner.usb.UsbMassStorage
+import java.io.File
 
 /** 选中文件（已读入内存；大文件夹可能 OOM，见 README 说明）。 */
 data class SelectedFile(
@@ -46,8 +46,8 @@ class MainActivity : AppCompatActivity() {
         override fun onReceive(c: Context?, intent: Intent?) {
             if (intent?.action != ACTION_USB_PERMISSION) return
             @Suppress("DEPRECATION")
-            val dev = intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
-            val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+            val dev = intent.getParcelableExtra<android.hardware.usb.UsbDevice>(android.hardware.usb.UsbManager.EXTRA_DEVICE)
+            val granted = intent.getBooleanExtra(android.hardware.usb.UsbManager.EXTRA_PERMISSION_GRANTED, false)
             if (granted && dev != null) openDrive(dev)
             else setStatus("USB 权限被拒绝")
         }
@@ -55,24 +55,42 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
 
-        usb = UsbMassStorage(this)
-        permissionIntent = android.app.PendingIntent.getBroadcast(
-            this, 0, Intent(ACTION_USB_PERMISSION), android.app.PendingIntent.FLAG_IMMUTABLE
-        )
+        // 如果上次启动崩溃过，先把记录弹出来，方便排查"进不去"
+        showPreviousCrash()
 
-        adapter = FileAdapter(selected)
-        binding.rvFiles.adapter = adapter
-        binding.rvFiles.layoutManager = LinearLayoutManager(this)
+        try {
+            binding = ActivityMainBinding.inflate(layoutInflater)
+            setContentView(binding.root)
 
-        binding.btnPick.setOnClickListener { folderLauncher.launch(null) }
-        binding.btnBurnCdr.setOnClickListener { doBurn(rewritable = false) }
-        binding.btnBurnCdrw.setOnClickListener { doBurn(rewritable = true) }
+            usb = UsbMassStorage(this)
+            permissionIntent = android.app.PendingIntent.getBroadcast(
+                this, 0, Intent(ACTION_USB_PERMISSION),
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                    android.app.PendingIntent.FLAG_IMMUTABLE
+                else 0
+            )
 
-        registerReceiver(usbReceiver, IntentFilter(ACTION_USB_PERMISSION))
-        refreshDrive()
+            adapter = FileAdapter(selected)
+            binding.rvFiles.adapter = adapter
+            binding.rvFiles.layoutManager = LinearLayoutManager(this)
+
+            binding.btnPick.setOnClickListener { folderLauncher.launch(null) }
+            binding.btnBurnCdr.setOnClickListener { doBurn(rewritable = false) }
+            binding.btnBurnCdrw.setOnClickListener { doBurn(rewritable = true) }
+
+            // Android 13+ 必须显式声明 RECEIVER_NOT_EXPORTED，否则启动即 IllegalArgumentException 闪退
+            ContextCompat.registerReceiver(
+                this, usbReceiver, IntentFilter(ACTION_USB_PERMISSION),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            refreshDrive()
+
+            // 启动成功，清掉旧的崩溃记录
+            File(filesDir, "crash.log").delete()
+        } catch (e: Throwable) {
+            showFatal(e)
+        }
     }
 
     override fun onDestroy() {
@@ -83,7 +101,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        refreshDrive()
+        if (::binding.isInitialized) refreshDrive()
     }
 
     /** 检查是否已插入光驱并已就绪/授权。 */
@@ -102,7 +120,7 @@ class MainActivity : AppCompatActivity() {
         if (!usb.isOpen) openDrive(dev)
     }
 
-    private fun openDrive(dev: UsbDevice) {
+    private fun openDrive(dev: android.hardware.usb.UsbDevice) {
         if (usb.open(dev)) {
             binding.tvDevice.text = "已连接：${dev.productName ?: dev.deviceName}"
         } else {
@@ -118,7 +136,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** 递归读取用户选择的整个文件夹为 (相对路径, 字节)。 */
-    private fun loadFolder(uri: Uri) {
+    private fun loadFolder(uri: android.net.Uri) {
         Thread {
             val root = DocumentFile.fromTreeUri(this, uri) ?: return@Thread
             val out = mutableListOf<SelectedFile>()
@@ -172,11 +190,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setStatus(s: String) { binding.tvStatus.text = s }
+
+    /** 若上次启动崩溃过，把 crash.log 弹出来。 */
+    private fun showPreviousCrash() {
+        val file = File(filesDir, "crash.log")
+        if (!file.exists()) return
+        val text = file.readText()
+        AlertDialog.Builder(this)
+            .setTitle("上次启动崩溃记录")
+            .setMessage(text)
+            .setPositiveButton("知道了") { _, _ -> }
+            .show()
+    }
+
+    /** 初始化过程中若抛出异常，拦截下来显示到屏幕，而不是白屏闪退。 */
+    private fun showFatal(e: Throwable) {
+        val tv = TextView(this)
+        tv.text = "启动出错（已拦截，未闪退）：\n\n" + android.util.Log.getStackTraceString(e)
+        tv.setTextIsSelectable(true)
+        tv.setPadding(32, 32, 32, 32)
+        tv.textSize = 11f
+        setContentView(tv)
+    }
 }
 
 /** 简单的文件列表适配器。 */
 class FileAdapter(private val items: List<SelectedFile>) : RecyclerView.Adapter<FileViewHolder>() {
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FileViewHolder {
+    override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int): FileViewHolder {
         val tv = TextView(parent.context)
         tv.setPadding(8, 10, 8, 10)
         tv.textSize = 14f
