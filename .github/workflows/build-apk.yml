@@ -16,6 +16,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: ${{ github.workspace }}/android-sdk
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,16 +28,18 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # 手动安装 Android SDK 命令行工具（不依赖已失效的 setup-android action）
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept licenses & install SDK packages
         run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o cmdline-tools.zip
+          python3 -c "import zipfile; zipfile.ZipFile('cmdline-tools.zip').extractall('$ANDROID_HOME/cmdline-tools')"
+          mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Build debug APK
-        # 项目没有提交 gradlew 包装脚本，这里直接指定 Gradle 8.4（与 gradle-wrapper.properties 一致）
+        # 项目未提交 gradlew 包装脚本，这里直接指定 Gradle 8.4（与本地构建一致）
         uses: gradle/gradle-build-action@v3
         with:
           gradle-version: 8.4
