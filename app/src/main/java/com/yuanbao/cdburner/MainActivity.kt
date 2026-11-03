@@ -82,6 +82,11 @@ class MainActivity : AppCompatActivity() {
             binding = ActivityMainBinding.inflate(layoutInflater)
             setContentView(binding.root)
 
+            // 显示版本号，方便覆盖安装后确认是否装的是最新版
+            val verName = packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+            val verCode = packageManager.getPackageInfo(packageName, 0).versionCode
+            binding.tvVersion.text = "版本：$verName（build $verCode）"
+
             usb = UsbMassStorage(this)
             permissionIntent = android.app.PendingIntent.getBroadcast(
                 this, 0, Intent(ACTION_USB_PERMISSION),
