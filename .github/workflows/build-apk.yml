@@ -35,6 +35,7 @@ jobs:
           curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o cmdline-tools.zip
           python3 -c "import zipfile; zipfile.ZipFile('cmdline-tools.zip').extractall('$ANDROID_HOME/cmdline-tools')"
           mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
+          chmod +x "$ANDROID_HOME/cmdline-tools/latest/bin/"*
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0"
 
