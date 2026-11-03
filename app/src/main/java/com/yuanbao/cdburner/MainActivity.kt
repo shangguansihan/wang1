@@ -1,11 +1,15 @@
 package com.yuanbao.cdburner
 
+import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
+import android.view.View
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -34,12 +38,27 @@ class MainActivity : AppCompatActivity() {
     private lateinit var usb: UsbMassStorage
     private val selected = mutableListOf<SelectedFile>()
     private lateinit var adapter: FileAdapter
+    private val logBuf = StringBuilder()
 
     private val ACTION_USB_PERMISSION = "com.yuanbao.cdburner.USB_PERMISSION"
     private lateinit var permissionIntent: android.app.PendingIntent
 
     private val folderLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) loadFolder(uri)
+    }
+
+    /** 选择多个/单个具体文件（像微信发文件那样勾选），而不是整文件夹。 */
+    private val filesLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode != Activity.RESULT_OK) return@registerForActivityResult
+        val data = result.data ?: return@registerForActivityResult
+        val uris = mutableListOf<Uri>()
+        val clip = data.clipData
+        if (clip != null) {
+            for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
+        } else {
+            data.data?.let { uris.add(it) }
+        }
+        if (uris.isNotEmpty()) loadFiles(uris)
     }
 
     private val usbReceiver = object : BroadcastReceiver() {
@@ -75,7 +94,9 @@ class MainActivity : AppCompatActivity() {
             binding.rvFiles.adapter = adapter
             binding.rvFiles.layoutManager = LinearLayoutManager(this)
 
-            binding.btnPick.setOnClickListener { folderLauncher.launch(null) }
+            binding.btnPickFiles.setOnClickListener { pickFiles() }
+            binding.btnPickFolder.setOnClickListener { folderLauncher.launch(null) }
+            binding.btnClear.setOnClickListener { clearSelection() }
             binding.btnBurnCdr.setOnClickListener { doBurn(rewritable = false) }
             binding.btnBurnCdrw.setOnClickListener { doBurn(rewritable = true) }
 
@@ -135,6 +156,40 @@ class MainActivity : AppCompatActivity() {
         binding.btnBurnCdrw.isEnabled = ok
     }
 
+    /** 弹出系统文件选择器，可勾选单个或多个具体文件。 */
+    private fun pickFiles() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        filesLauncher.launch(intent)
+    }
+
+    /** 把一个文件 Uri 的显示名查出来。 */
+    private fun queryName(uri: Uri): String {
+        contentResolver.query(uri, null, null, null, null)?.use { c ->
+            val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (i >= 0 && c.moveToFirst()) return c.getString(i)
+        }
+        return uri.lastPathSegment ?: "FILE"
+    }
+
+    /** 把用户勾选的多个/单个文件读入内存（扁平结构，无子目录）。 */
+    private fun loadFiles(uris: List<Uri>) {
+        Thread {
+            val out = mutableListOf<SelectedFile>()
+            var total = 0L
+            for (uri in uris) {
+                val name = queryName(uri)
+                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
+                out.add(SelectedFile(name, name, bytes.size.toLong(), bytes))
+                total += bytes.size
+            }
+            runOnUiThread { applySelection(out, total) }
+        }.start()
+    }
+
     /** 递归读取用户选择的整个文件夹为 (相对路径, 字节)。 */
     private fun loadFolder(uri: android.net.Uri) {
         Thread {
@@ -153,14 +208,33 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             walk(root, "")
-            runOnUiThread {
-                selected.clear(); selected.addAll(out); adapter.notifyDataSetChanged()
-                val mb = total / (1024.0 * 1024.0)
-                binding.tvSummary.text = "共 ${out.size} 个文件，${"%.1f".format(mb)} MB"
-                if (total > 700L * 1024 * 1024) setStatus("警告：超过 700MB（CD 容量上限），请删减")
-                updateButtons()
-            }
+            runOnUiThread { applySelection(out, total) }
         }.start()
+    }
+
+    /** 统一处理选完文件后的 UI 更新。 */
+    private fun applySelection(out: List<SelectedFile>, total: Long) {
+        selected.clear(); selected.addAll(out); adapter.notifyDataSetChanged()
+        val mb = total / (1024.0 * 1024.0)
+        binding.tvSummary.text = "共 ${out.size} 个文件，${"%.1f".format(mb)} MB"
+        if (total > 700L * 1024 * 1024) log("⚠️ 总大小超过 700MB（一张 CD 的容量上限），请删减后再刻")
+        else log("已选 ${out.size} 个文件，共 ${"%.1f".format(mb)} MB")
+        updateButtons()
+    }
+
+    /** 清空已选文件列表。 */
+    private fun clearSelection() {
+        selected.clear(); adapter.notifyDataSetChanged()
+        binding.tvSummary.text = "共 0 个文件，0 B"
+        log("已清空文件列表")
+        updateButtons()
+    }
+
+    /** 往运行日志框追加一行（关键步骤 / 错误都记这里，方便排查）。 */
+    private fun log(msg: String) {
+        logBuf.append("• ").append(msg).append("\n")
+        binding.tvLog.text = logBuf.toString()
+        binding.scrollLog.post { binding.scrollLog.fullScroll(View.FOCUS_DOWN) }
     }
 
     private fun doBurn(rewritable: Boolean) {
@@ -172,18 +246,25 @@ class MainActivity : AppCompatActivity() {
 
         val items = selected.map { it.relPath to it.bytes }
         val progress: (Int, String) -> Unit = { pct, msg ->
-            runOnUiThread { binding.progress.progress = pct; setStatus(msg) }
+            runOnUiThread {
+                binding.progress.progress = pct
+                setStatus(msg)
+                // 进度百分比那行不刷屏，关键步骤/错误都记进运行日志
+                if (!msg.contains('%')) log(msg)
+            }
         }
+        log("开始${if (rewritable) "擦除并重刻" else "刻录"}（${selected.size} 个文件）…")
         Thread {
             val burner = CdBurner(usb)
             if (rewritable) {
                 val okBlank = burner.blank(immediate = false, progress)
-                if (!okBlank) { runOnUiThread { updateButtons() }; return@Thread }
+                if (!okBlank) { runOnUiThread { log("✗ 擦除失败，流程中止"); updateButtons() }; return@Thread }
             }
             val plan = Iso9660Builder.plan(items)
             val ok = burner.burn(plan, progress)
             runOnUiThread {
-                setStatus(if (ok) "刻录完成 ✓（封盘后放入任意光驱可读）" else "刻录失败，详见上方状态")
+                if (ok) log("✓ 全部完成")
+                else log("✗ 处理失败，请查看上方日志中的『错误详情』")
                 updateButtons()
             }
         }.start()

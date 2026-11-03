@@ -22,20 +22,52 @@
         android:textSize="14sp"
         android:paddingBottom="8dp" />
 
-    <Button
-        android:id="@+id/btnPick"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/btn_pick" />
+        android:orientation="horizontal">
 
-    <TextView
+        <Button
+            android:id="@+id/btnPickFiles"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/btn_pick_files" />
+
+        <Button
+            android:id="@+id/btnPickFolder"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="@string/btn_pick_folder" />
+    </LinearLayout>
+
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/title_file_list"
-        android:textSize="15sp"
-        android:textStyle="bold"
+        android:orientation="horizontal"
         android:paddingTop="12dp"
-        android:paddingBottom="4dp" />
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/title_file_list"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnClear"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_clear"
+            android:textSize="13sp"
+            android:minHeight="0dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp" />
+    </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvFiles"
@@ -68,15 +100,34 @@
         android:layout_height="wrap_content"
         android:text="@string/status_idle"
         android:textSize="14sp"
+        android:textStyle="bold"
         android:paddingTop="6dp"
-        android:paddingBottom="10dp" />
+        android:paddingBottom="6dp" />
+
+    <ScrollView
+        android:id="@+id/scrollLog"
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:background="#FAFAFA"
+        android:padding="6dp">
+
+        <TextView
+            android:id="@+id/tvLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="（运行日志会显示在这里）"
+            android:textSize="12sp"
+            android:typeface="monospace"
+            android:textColor="#333333" />
+    </ScrollView>
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnBurnCdr"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/btn_burn_cdr"
-        android:enabled="false" />
+        android:enabled="false"
+        android:layout_marginTop="8dp" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnBurnCdrw"

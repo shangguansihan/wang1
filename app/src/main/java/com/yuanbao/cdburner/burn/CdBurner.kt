@@ -37,21 +37,38 @@ class CdBurner(private val drive: UsbMassStorage) {
         return r.ok
     }
 
+    /** 把最近一次命令的 SENSE 错误组织成便于阅读的中文串。 */
+    private fun senseText(): String {
+        val s = drive.requestSense()
+        return if (s.valid) {
+            "［错误详情］${s.description}（键=${s.senseKey} ASC=${hex(s.asc)} ASCQ=${hex(s.ascq)}）"
+        } else {
+            "［错误详情］${s.description}"
+        }
+    }
+
+    private fun hex(v: Int): String = "0x%02X".format(v)
+
     /**
      * 擦除整张 CD-RW。immediate=false 时阻塞到完成（可能几分钟）。
      * @return 成功与否
      */
     fun blank(immediate: Boolean = false, progress: (Int, String) -> Unit): Boolean {
-        progress(0, "正在擦除光盘…")
+        progress(0, "正在等待光驱就绪…")
+        if (!waitUntilReady(15000)) {
+            progress(0, "光驱未就绪，无法擦除（请确认光盘已放入刻录机）")
+            return false
+        }
+        progress(0, "正在擦除光盘（可能需要几分钟，请勿拔线）…")
         drive.timeoutMs = 10 * 60 * 1000 // 擦除可能很久
         val r = drive.execScsi(ScsiCommands.blank(0x00, immediate))
         drive.timeoutMs = 60_000
         if (!r.ok) {
-            progress(0, "擦除失败 status=${r.status}，可用 REQUEST SENSE 查看详情")
+            progress(0, "擦除失败：${senseText()}")
             return false
         }
         waitUntilReady(10 * 60 * 1000)
-        progress(100, "擦除完成")
+        progress(100, "擦除完成 ✓")
         return true
     }
 
@@ -61,8 +78,14 @@ class CdBurner(private val drive: UsbMassStorage) {
      * @param progress 进度回调 (百分比, 状态文本)
      */
     fun burn(plan: IsoPlan, progress: (Int, String) -> Unit): Boolean {
+        progress(0, "正在等待光驱就绪…")
+        if (!waitUntilReady(15000)) {
+            progress(0, "光驱未就绪，无法刻录（请确认光盘已放入且已就绪）")
+            return false
+        }
+
         if (!setWriteParams()) {
-            progress(0, "设置写参数失败（部分刻录机不支持 SAO，可改 TAO）")
+            progress(0, "设置写参数失败：${senseText()}")
             return false
         }
 
@@ -78,7 +101,7 @@ class CdBurner(private val drive: UsbMassStorage) {
             }
             val r = drive.execScsi(ScsiCommands.write10(lba, n), outData = data)
             if (!r.ok) {
-                progress(lba * 100 / total, "写入失败 @LBA$lba status=${r.status}")
+                progress(lba * 100 / total, "写入失败 @LBA$lba：${senseText()}")
                 return false
             }
             lba += n
@@ -90,10 +113,10 @@ class CdBurner(private val drive: UsbMassStorage) {
         val c = drive.execScsi(ScsiCommands.closeTrackSession(0x00))
         drive.timeoutMs = 60_000
         if (!c.ok) {
-            progress(99, "封盘失败 status=${c.status}")
+            progress(99, "封盘失败：${senseText()}")
             return false
         }
-        progress(100, "刻录完成 ✓")
+        progress(100, "刻录完成 ✓（封盘后可在任意光驱 / 电脑读取）")
         return true
     }
 

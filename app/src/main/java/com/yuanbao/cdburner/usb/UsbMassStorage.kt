@@ -146,6 +146,66 @@ class UsbMassStorage(private val context: Context) {
         return execScsi(ScsiCommands.read10(lba, blocks), inData = buf)
     }
 
+    /**
+     * 命令失败后取详细错误（REQUEST SENSE）。返回中文可读解读，方便排查"看不到错误"的问题。
+     */
+    data class ScsiSense(
+        val senseKey: Int,
+        val asc: Int,
+        val ascq: Int,
+        val valid: Boolean,
+        val description: String
+    ) {
+        /** 是否只是信息性提示（senseKey=0，命令其实成功但带了附加信息）。 */
+        val isInformational: Boolean get() = valid && senseKey == 0
+    }
+
+    /** 发送 REQUEST SENSE 并把 18 字节固定格式响应解析成中文。 */
+    fun requestSense(): ScsiSense {
+        val buf = ByteArray(18)
+        val r = execScsi(ScsiCommands.requestSense(), inData = buf)
+        if (!r.ok || buf.size < 18) {
+            return ScsiSense(-1, -1, -1, false, "（无法读取错误详情：设备未返回 SENSE 数据）")
+        }
+        val senseKey = buf[2].toInt() and 0x0F
+        val asc = buf[12].toInt() and 0xFF
+        val ascq = buf[13].toInt() and 0xFF
+        return ScsiSense(senseKey, asc, ascq, true, decodeSense(senseKey, asc, ascq))
+    }
+
+    /** 把最常见的 SCSI/MMC 错误码翻译成大白话，让非技术的用户也能看懂。 */
+    private fun decodeSense(senseKey: Int, asc: Int, ascq: Int): String {
+        val sk = when (senseKey) {
+            0x00 -> "正常（设备没报错，可能是流程问题）"
+            0x02 -> "设备未就绪"
+            0x03 -> "介质错误"
+            0x04 -> "硬件错误"
+            0x05 -> "非法请求（命令或参数不被接受）"
+            0x06 -> "单元注意（状态变化，通常重试即可）"
+            0x0B -> "命令被中止"
+            else -> "未知错误（键=$senseKey）"
+        }
+        val detail = when {
+            senseKey == 0x02 && asc == 0x3A && ascq == 0x01 -> "介质未装入（请确认光盘已放入刻录机）"
+            senseKey == 0x02 && asc == 0x3A -> "光驱里没有光盘（请放入光盘后重试）"
+            senseKey == 0x02 && asc == 0x04 -> "光驱正在初始化 / 盘片未就绪（稍等几秒再试）"
+            senseKey == 0x05 && asc == 0x21 -> "光盘被写保护，或这是不可擦写的盘（CD-R 不能擦除，擦除请改用 CD-RW 盘）"
+            senseKey == 0x05 && asc == 0x30 && ascq == 0x02 -> "介质不兼容（可能不是 CD-R/CD-RW，或盘片已损坏）"
+            senseKey == 0x05 && asc == 0x30 && ascq == 0x05 -> "介质不兼容（无法在该盘上执行此操作）"
+            senseKey == 0x05 && asc == 0x20 -> "设备不支持该命令（可能此刻录机型号受限）"
+            senseKey == 0x05 && asc == 0x24 -> "命令参数无效（CDB 字段错误）"
+            senseKey == 0x05 && asc == 0x26 -> "参数列表无效（写参数不被接受，可能需改用 TAO 模式）"
+            senseKey == 0x05 && asc == 0x2C -> "命令序列错误（流程不对，请先正确开始写入）"
+            senseKey == 0x05 && asc == 0x53 -> "介质加载 / 弹射机构故障"
+            senseKey == 0x03 -> "介质错误（光盘划伤或刻录机读写出错）"
+            senseKey == 0x04 -> "硬件错误（刻录机本身故障）"
+            else -> "原始码 ASC=${hex(asc)} / ASCQ=${hex(ascq)}"
+        }
+        return "$sk：$detail"
+    }
+
+    private fun hex(v: Int): String = "0x%02X".format(v)
+
     private fun buildCbw(tag: Int, cdb: ByteArray, dataLen: Int, isIn: Boolean): ByteArray {
         val cbw = ByteArray(31)
         // dCBWSignature = 'USBC' 小端 => 55 53 42 43
