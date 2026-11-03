@@ -146,6 +146,25 @@ class UsbMassStorage(private val context: Context) {
         return execScsi(ScsiCommands.read10(lba, blocks), inData = buf)
     }
 
+    /** INQUIRY 解析结果：让界面显示光驱真实厂商/型号/固件，而不是泛泛的"Mass Storage Device"。 */
+    data class InquiryInfo(
+        val vendor: String,
+        val product: String,
+        val revision: String,
+        val valid: Boolean
+    )
+
+    /** 发送 INQUIRY 并解析 36 字节标准响应。连接成功后调用，用于确认识别到的到底是不是真刻录机。 */
+    fun inquiryInfo(): InquiryInfo {
+        val buf = ByteArray(36)
+        val r = execScsi(ScsiCommands.inquiry(), inData = buf)
+        if (!r.ok || buf.size < 36) return InquiryInfo("", "", "", false)
+        val vendor = String(buf.copyOfRange(8, 16), Charsets.US_ASCII).trim()
+        val product = String(buf.copyOfRange(16, 32), Charsets.US_ASCII).trim()
+        val revision = String(buf.copyOfRange(32, 36), Charsets.US_ASCII).trim()
+        return InquiryInfo(vendor, product, revision, true)
+    }
+
     /**
      * 命令失败后取详细错误（REQUEST SENSE）。返回中文可读解读，方便排查"看不到错误"的问题。
      */

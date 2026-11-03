@@ -64,7 +64,7 @@ class CdBurner(private val drive: UsbMassStorage) {
         val r = drive.execScsi(ScsiCommands.blank(0x00, immediate))
         drive.timeoutMs = 60_000
         if (!r.ok) {
-            progress(0, "擦除失败：${senseText()}")
+            progress(0, "擦除失败（BLANK 命令）：${senseText()}")
             return false
         }
         waitUntilReady(10 * 60 * 1000)
@@ -85,7 +85,7 @@ class CdBurner(private val drive: UsbMassStorage) {
         }
 
         if (!setWriteParams()) {
-            progress(0, "设置写参数失败：${senseText()}")
+            progress(0, "写参数失败（MODE SELECT 命令）：${senseText()}")
             return false
         }
 
@@ -101,7 +101,7 @@ class CdBurner(private val drive: UsbMassStorage) {
             }
             val r = drive.execScsi(ScsiCommands.write10(lba, n), outData = data)
             if (!r.ok) {
-                progress(lba * 100 / total, "写入失败 @LBA$lba：${senseText()}")
+                progress(lba * 100 / total, "写入失败（WRITE @LBA$lba）：${senseText()}")
                 return false
             }
             lba += n
@@ -113,7 +113,7 @@ class CdBurner(private val drive: UsbMassStorage) {
         val c = drive.execScsi(ScsiCommands.closeTrackSession(0x00))
         drive.timeoutMs = 60_000
         if (!c.ok) {
-            progress(99, "封盘失败：${senseText()}")
+            progress(99, "封盘失败（CLOSE TRACK/SESSION 命令）：${senseText()}")
             return false
         }
         progress(100, "刻录完成 ✓（封盘后可在任意光驱 / 电脑读取）")

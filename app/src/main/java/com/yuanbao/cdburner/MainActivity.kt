@@ -143,7 +143,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun openDrive(dev: android.hardware.usb.UsbDevice) {
         if (usb.open(dev)) {
-            binding.tvDevice.text = "已连接：${dev.productName ?: dev.deviceName}"
+            val info = usb.inquiryInfo()
+            if (info.valid && info.product.isNotEmpty()) {
+                binding.tvDevice.text = "已连接：${info.product}（固件 ${info.revision}）"
+                log("设备识别：${info.vendor} ${info.product} 固件 ${info.revision}")
+            } else {
+                binding.tvDevice.text = "已连接：${dev.productName ?: "光驱"}"
+            }
         } else {
             binding.tvDevice.text = "打开光驱失败（可能不是 Mass Storage 类）"
         }
